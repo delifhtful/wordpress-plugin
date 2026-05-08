@@ -9,11 +9,6 @@ class MeruHai_Integration {
     if (is_admin()) {
       add_action('admin_menu', array($this, 'add_admin_menu'), 10);
       add_action('admin_init', array($this, 'admin_init'));
-
-      // 接続情報が更新されたら、以前の関連データをクリアして再設定できるようにする
-      add_action('update_option_meruhai_endpoint_url', array($this, 'clear_dependent_settings_on_connection_change'), 10, 3);
-      add_action('update_option_meruhai_login_id', array($this, 'clear_dependent_settings_on_connection_change'), 10, 3);
-      add_action('update_option_meruhai_password', array($this, 'clear_dependent_settings_on_connection_change'), 10, 3);
     }
     
     // Contact Form 7のフック（プラグインが有効な場合のみ）
@@ -65,19 +60,6 @@ class MeruHai_Integration {
     register_setting('meruhai_settings', 'meruhai_csv_headers');
   }
 
-  /**
-   * 接続情報が変更された場合、従属する設定（ヘッダー/マッピング）をクリア
-   */
-  public function clear_dependent_settings_on_connection_change($old_value, $value, $option) {
-    if ($old_value === $value) {
-      return;
-    }
-
-    // 接続先が変わったら旧データは整合しないため削除
-    delete_option('meruhai_csv_headers');
-    delete_option('meruhai_field_mapping');
-  }
-  
   /**
    * 管理画面の表示
    */
@@ -290,9 +272,7 @@ class MeruHai_Integration {
     $result = $api->test_connection();
     
     if ($result) {
-      // 接続成功後、読者リストを取得してCSVヘッダーを保存
-      // 接続テスト直後は、前回のマッピングが新しいヘッダーと整合しないためクリアする
-      delete_option('meruhai_field_mapping');
+      // 接続テスト時は保存済みCSVヘッダーをクリアし、取得した最新のCSVヘッダーで上書きする
       delete_option('meruhai_csv_headers');
 
       $readers = $api->get_readers();
@@ -341,16 +321,11 @@ class MeruHai_Integration {
       $new_headers = isset($readers['headers']) && is_array($readers['headers'])
         ? $readers['headers']
         : array();
-      $existing_headers = get_option('meruhai_csv_headers', array());
-      
-      // CSVヘッダーが変わったら、古いマッピングは整合しないので消す
-      if (md5(json_encode($existing_headers)) !== md5(json_encode($new_headers))) {
-        delete_option('meruhai_field_mapping');
-      }
-      
-      // CSVヘッダーを保存
+
+      // 保存済みCSVヘッダーをクリアして、取得した最新のCSVヘッダーで上書きする
+      delete_option('meruhai_csv_headers');
       update_option('meruhai_csv_headers', $new_headers);
-      
+
       $cf7_fields = $this->get_cf7_fields();
       $html = $this->render_field_mapping_form($readers, $cf7_fields);
       wp_send_json_success($html);
